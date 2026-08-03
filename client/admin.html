@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>幽陵摸金 · 管理员统计</title>
+<style>
+:root{--ink:#080603;--gold:#c8a44d;--blood:#b03a2e;--jade:#3f9e9e;--paper:#e8dcc0;--muted:#8e8064}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#f3eddf;color:#231b10;font-family:"PingFang SC","Microsoft YaHei",sans-serif}.shell{display:grid;grid-template-columns:minmax(210px,26vw) 1fr;min-height:100vh}.rail{padding:42px 30px;background:var(--ink);color:var(--paper);position:relative;overflow:hidden}.rail:after{content:"";position:absolute;width:210px;height:210px;border:1px solid rgba(200,164,77,.2);transform:rotate(32deg);right:-115px;bottom:70px}.brand small{color:#786a4e;letter-spacing:4px}.brand h1{font-family:"STSong","Songti SC",serif;font-size:38px;letter-spacing:8px;color:var(--gold);margin:9px 0 4px}.brand p{color:#756a54;font-size:12px;line-height:1.8}.metrics{margin-top:55px;display:flex;flex-direction:column;gap:28px}.metric{border-left:3px solid #4a3c1d;padding-left:16px}.metric.online{border-color:var(--jade)}.metric b{display:block;font:700 40px "STSong","Songti SC",serif;color:var(--paper)}.metric span{font-size:11px;color:#8d8065;letter-spacing:3px}.content{padding:46px clamp(24px,5vw,70px)}.head{display:flex;align-items:end;justify-content:space-between;border-bottom:1px solid #c9b991;padding-bottom:18px}.head h2{margin:0;font:700 30px "STSong","Songti SC",serif;letter-spacing:4px}.head p{margin:7px 0 0;color:#85765c;font-size:12px}.status{font-size:11px;color:#6f624d}.status i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--jade);margin-right:7px}.grid{display:grid;grid-template-columns:1.35fr .65fr;gap:22px;margin-top:28px}.panel{background:#fffaf0;border:1px solid #d5c8a8;padding:22px;box-shadow:8px 8px 0 #e4d9c2}.panel.offset{margin-top:46px}.panel h3{margin:0 0 18px;font:700 20px "STSong","Songti SC",serif;letter-spacing:3px;color:#49391e}.table{width:100%;border-collapse:collapse;font-size:12px}.table th{text-align:left;color:#8c7b5a;font-weight:400;letter-spacing:2px;border-bottom:1px solid #dacdac;padding:8px}.table td{padding:11px 8px;border-bottom:1px solid #eee4cf}.table td:first-child{white-space:nowrap;color:#64583f}.note{border-left:3px solid var(--blood);padding:14px 16px;background:#f0e5d2;color:#725c3c;font-size:12px;line-height:1.7}.refresh{margin-top:18px;width:100%;padding:11px;border:1px solid #886b2e;background:#c8a44d;color:#211706;font-weight:700;letter-spacing:2px;cursor:pointer}@media(max-width:760px){.shell{grid-template-columns:1fr}.rail{padding:25px}.metrics{margin-top:25px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.metric b{font-size:28px}.content{padding:28px 18px}.grid{grid-template-columns:1fr}.panel.offset{margin-top:0}.head{align-items:start;gap:12px}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand"><small>OPERATIONS / 运营台</small><h1>幽陵摸金</h1><p>真实玩家进入统计<br>数据默认仅保存在本机服务端</p></div>
+    <div class="metrics">
+      <div class="metric"><b id="totalEntries">—</b><span>累计进入次数</span></div>
+      <div class="metric"><b id="uniqueVisitors">—</b><span>独立真实用户</span></div>
+      <div class="metric online"><b id="onlineUsers">—</b><span>当前在线人数</span></div>
+    </div>
+  </aside>
+  <main class="content">
+    <header class="head"><div><h2>用户进入记录</h2><p>同一浏览器以本地匿名标识去重，不记录完整 IP。</p></div><div class="status"><i></i><span id="updatedAt">正在读取</span></div></header>
+    <section class="grid">
+      <div class="panel"><h3>近期进入</h3><table class="table"><thead><tr><th>时间</th><th>代号</th><th>角色</th><th>匿名用户</th><th>网络</th></tr></thead><tbody id="recent"></tbody></table></div>
+      <div class="panel offset"><h3>统计说明</h3><div class="note">后台默认关闭。只有设置管理员环境变量后才可访问；密码不得少于12位。统计文件采用临时文件写入后原子替换，减少服务异常时的数据损坏。</div><button id="refresh" class="refresh">刷新数据</button></div>
+    </section>
+  </main>
+</div>
+<script>
+const charNames={mofeng:'墨锋',shuangye:'霜叶',leizhen:'雷震',liuyan:'柳烟',tieshan:'铁山',yueyao:'月瑶',fengsun:'风隼',hongchen:'红尘',canglang:'苍狼',qingluan:'青鸾'};
+const fmt=iso=>new Date(iso).toLocaleString('zh-CN',{hour12:false});
+async function load(){const r=await fetch('/api/admin/stats',{cache:'no-store'});if(!r.ok)throw new Error('读取失败');const d=await r.json();totalEntries.textContent=d.totalEntries.toLocaleString();uniqueVisitors.textContent=d.uniqueVisitors.toLocaleString();onlineUsers.textContent=d.onlineUsers.toLocaleString();updatedAt.textContent='更新于 '+fmt(d.updatedAt);recent.innerHTML=d.recent.length?d.recent.map(x=>`<tr><td>${fmt(x.at)}</td><td>${esc(x.name)}</td><td>${charNames[x.char]||esc(x.char)}</td><td>${esc(x.visitor)}</td><td>${esc(x.ip)}</td></tr>`).join(''):'<tr><td colspan="5">暂无真实玩家进入记录</td></tr>'}function esc(v){const e=document.createElement('span');e.textContent=String(v||'');return e.innerHTML}refresh.onclick=()=>load().catch(e=>alert(e.message));load().catch(e=>{updatedAt.textContent=e.message});setInterval(()=>load().catch(()=>{}),15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "youling-mojin",
+  "version": "1.0.0",
+  "description": "幽陵摸金 - 网页多人摸金对抗游戏",
+  "type": "module",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.185.1",
+    "ws": "^8.21.1"
+  }
+}

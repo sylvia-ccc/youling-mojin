@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>幽陵摸金 · 多人古墓夺宝</title>
+<link rel="stylesheet" href="css/style.css?v=public-beta-1">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- 主菜单 -->
+<div id="menu" class="screen">
+  <div class="menu-inner">
+    <h1 class="title">幽陵摸金</h1>
+    <p class="subtitle">鸡鸣灯灭不摸金 —— 多人古墓夺宝 · 杀出重围</p>
+    <div class="panel">
+      <input id="nameInput" maxlength="12" placeholder="报上名来（摸金代号）" autocomplete="off">
+      <div id="charCards" class="char-cards"></div>
+      <button id="matchBtn" class="btn-primary">开始匹配 · 下墓</button>
+      <p class="tip">真人优先匹配，5 秒后 AI 校尉补位</p>
+    </div>
+    <div class="howto desktop-howto">
+      <span><b>WASD</b> 移动</span><span><b>鼠标</b> 视角/左键攻击</span><span><b>E</b> 开门/摸金</span>
+      <span><b>1-3</b> 道具</span><span><b>V</b> 三种视角</span><span><b>Shift</b> 疾跑</span>
+    </div>
+    <div class="howto touch-howto">
+      <span><b>左摇杆</b> 移动</span><span><b>右屏滑动</b> 转动视角</span><span><b>攻</b> 战斗</span>
+      <span><b>交互</b> 长按开门/摸金</span><span><b>视角</b> 切换镜头</span><span><b>道具栏</b> 点按使用</span>
+    </div>
+    <footer class="creator">游戏创作者 · 来自深圳的10岁小学生 <b>晚宁</b></footer>
+  </div>
+</div>
+
+<!-- 匹配大厅 -->
+<div id="lobby" class="screen hidden">
+  <div class="menu-inner">
+    <h2 class="title-sm">正在集结摸金小队…</h2>
+    <div id="lobbyList" class="lobby-list"></div>
+    <p class="tip" id="lobbyTip">凑齐真人即刻下墓，5 秒后 AI 校尉补位</p>
+    <button id="cancelBtn" class="btn-ghost">取消匹配</button>
+  </div>
+</div>
+
+<!-- 游戏 HUD -->
+<div id="hud" class="hidden">
+  <div id="crosshair">+</div>
+  <div id="hitMarker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  <div id="vignette"></div>
+  <div id="lowHpPulse"></div>
+  <div id="dmgFlash"></div>
+
+  <div id="topbar">
+    <div id="timer">6:00</div>
+    <div id="mapName" style="display:none"></div>
+    <div id="exitState">撤离点未开启</div>
+    <div id="objective">目标：杀出荒院，寻找墓门</div>
+  </div>
+
+  <div id="killfeed"></div>
+  <div id="coinHud"><span class="coin-mark">◆</span><span id="coinValue">200000</span> 铜元 <small>B · 武器库</small></div>
+
+  <div id="minimapWrap"><canvas id="minimap" width="180" height="180"></canvas></div>
+
+  <div id="bottombar">
+    <div id="hpWrap">
+      <div id="hpBar"><div id="hpFill"></div></div>
+      <div id="buffs"></div>
+    </div>
+    <div id="weaponSlot" class="slot weapon">
+      <span class="key">武器</span>
+      <span class="ico" id="weaponIcon">✊</span>
+      <span class="ammo" id="weaponAmmo"></span>
+      <span class="nm" id="weaponName">拳脚</span>
+    </div>
+    <div id="hotbar"></div>
+    <div id="bagWrap">
+      <div id="bagValue">💰 0</div>
+      <div id="bagWeight">0/20斤</div>
+    </div>
+  </div>
+
+  <div id="relationPanel" class="hidden"><button id="relationClose" class="panel-close" aria-label="关闭关系面板">×</button><div class="relation-title">与真人绑定关系</div><div id="relationTarget"></div><div id="relationChoices"></div><button id="handBtn">牵手同行</button><small><span class="desktop-only">R 键</span><span class="touch-only">点 ×</span> 关闭</small></div>
+  <div id="viewMode"><span class="desktop-only">V · </span>第一人称</div>
+  <div id="interactTip" class="hidden"></div>
+  <div id="progWrap" class="hidden"><span id="progLabel">交互中</span><div id="progTrack"><div id="progBar"></div></div></div>
+  <div id="announce" class="hidden"></div>
+  <div id="deadOverlay" class="hidden">
+    <div class="spectate-card">
+      <small>摸金小队 · 阵亡观战</small>
+      <h2>你倒下了</h2>
+      <p id="respawnTip">正在寻找存活队友…</p>
+      <div class="spectate-actions"><button id="spectateNextBtn" class="btn-ghost">切换队友</button><button id="leaveMatchBtn" class="btn-danger">退出本局</button></div>
+    </div>
+  </div>
+  <div id="outOverlay" class="hidden">
+    <h2>✦ 成功撤离 ✦</h2>
+    <p id="outTip">明器已入库，观战中…</p>
+  </div>
+  <div id="shopOverlay" class="hidden">
+    <div class="shop-panel">
+      <div class="shop-head"><div><small>墓中黑市</small><h2>玄兵秘库</h2></div><div class="shop-balance"><span>◆</span><b id="shopCoins">200000</b> 铜元</div></div>
+      <p class="shop-lead">整备时间 <b id="loadoutCountdown">20</b> 秒 · 购入玄兵后，本局可免费补充弹药。</p>
+      <div id="shopGrid" class="shop-grid"></div>
+      <div class="shop-actions"><div id="shopNotice" class="shop-notice"><span class="desktop-only">点击武器购买或装备 · 按 <b>B</b> 关闭</span><span class="touch-only">点武器购买或装备，完成后点“整备完成”</span></div><button id="shopCloseBtn" class="shop-close-btn">整备完成 · 返回战场</button></div>
+    </div>
+  </div>
+
+  <div id="landscapeGuard" class="landscape-guard"><div class="rotate-device">↻</div><h3>请横屏游玩</h3><p>旋转手机或平板，操作按钮会自动出现</p></div>
+
+  <!-- 手机 / 平板触控层：左摇杆移动，右侧拖动视角与动作键 -->
+  <div id="touchControls" class="touch-controls" aria-label="触控操作区">
+    <div id="lookZone" class="look-zone"><span>滑动转向</span></div>
+    <div id="joystick" class="joystick" aria-label="移动摇杆"><div id="joystickKnob" class="joystick-knob"></div><span class="joystick-label">移动</span></div>
+    <div class="touch-top-actions">
+      <button id="touchShop" class="touch-mini hidden"><span>库</span><small>武器</small></button>
+      <button id="touchRelation" class="touch-mini"><span>缘</span><small>关系</small></button>
+      <button id="touchView" class="touch-mini"><span>视</span><small>视角</small></button>
+    </div>
+    <div class="touch-actions">
+      <button id="touchRun" class="touch-action run"><span>疾</span><small>按住疾跑</small></button>
+      <button id="touchInteract" class="touch-action interact disabled"><span>交</span><small id="touchInteractLabel">靠近目标</small></button>
+      <button id="touchAttack" class="touch-action attack"><span>攻</span><small>攻击</small></button>
+    </div>
+    <div id="mobileHint" class="mobile-hint"><b>左手移动</b><span>右侧滑动转向</span><span>点“攻”战斗</span></div>
+    <button id="mobileHelpBtn" class="mobile-help-btn" aria-label="查看操作说明">?</button>
+    <div id="mobileGuide" class="mobile-guide hidden">
+      <div class="mobile-guide-card">
+        <button id="mobileGuideClose" class="panel-close" aria-label="关闭操作说明">×</button>
+        <small>摸金校尉 · 操作罗盘</small><h3>手机 / 平板玩法</h3>
+        <div class="guide-row"><b>左摇杆</b><span>拖动移动；摇得越远，走得越快</span></div>
+        <div class="guide-row"><b>右侧空白区</b><span>滑动转向和抬头低头</span></div>
+        <div class="guide-row"><b>攻 / 交 / 疾</b><span>攻击；靠近目标后长按交互；按住疾跑</span></div>
+        <div class="guide-row"><b>视 / 缘 / 库</b><span>切换镜头；真人关系；整备阶段武器库</span></div>
+        <div class="guide-row"><b>底部道具</b><span>直接点按回阳丹、神行符、护身符</span></div>
+        <button id="mobileGuideOk" class="shop-close-btn">明白了 · 开始摸金</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 结算 -->
+<div id="end" class="screen hidden">
+  <div class="menu-inner">
+    <h2 class="title-sm">本场摸金榜</h2>
+    <div id="scoreboard"></div>
+    <button id="againBtn" class="btn-primary">再摸一局</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js?v=public-beta-1"></script>
+</body>
+</html>
