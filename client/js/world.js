@@ -83,6 +83,21 @@ export function buildMap(scene, map) {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(size, size), floorMat);
   floor.rotation.x = -Math.PI / 2; floor.position.y = 0;
   group.add(floor);
+
+  // 三路线区域：安全/机关/凶险墓室叠加低透明地面色与符印
+  const routeMarks = [];
+  for (const r of map.regions || []) {
+    const rw = Math.max(1, r.maxX - r.minX), rh = Math.max(1, r.maxZ - r.minZ);
+    const zone = new THREE.Mesh(new THREE.PlaneGeometry(rw, rh),
+      new THREE.MeshBasicMaterial({ color:r.color, transparent:true, opacity:r.main ? .18 : .11, depthWrite:false, side:THREE.DoubleSide }));
+    zone.rotation.x = -Math.PI / 2; zone.position.set((r.minX + r.maxX) / 2, .018, (r.minZ + r.maxZ) / 2);
+    group.add(zone);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(.55, .82, r.route === 'danger' ? 3 : r.route === 'mechanism' ? 8 : 20),
+      new THREE.MeshBasicMaterial({ color:r.color, transparent:true, opacity:.42, depthWrite:false, side:THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(zone.position.x, .026, zone.position.z);
+    group.add(ring); routeMarks.push(ring);
+  }
+
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(size, size), ceilMat);
   ceil.rotation.x = Math.PI / 2; ceil.position.y = WALL_H;
   group.add(ceil);
@@ -172,7 +187,7 @@ export function buildMap(scene, map) {
   }
 
   scene.add(group);
-  return { group, chests, torchPts, exitFx, tombDoor };
+  return { group, chests, torchPts, exitFx, tombDoor, routeMarks };
 }
 
 export function cell2world(map, i, j) {

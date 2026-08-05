@@ -4,7 +4,7 @@ import {
   MELEE_ARC, OPEN_TIME, GRAB_TIME,
   EXTRACT_TIME, ROUND_TIME, EXITS_OPEN_AT, RESPAWN_TIME, ZOMBIE,
   BOT_NAMES, STARTING_COINS, COIN_REWARDS,
-  CHEST_TIERS, ZOMBIE_VARIANTS, TRAPS, HAZARD,
+  CHEST_TIERS, ZOMBIE_VARIANTS, TRAPS, HAZARD, DANGER_BY_TIER, DANGER_MAX,
 } from './shared.js';
 import { generateMap, findPath } from './mapgen.js';
 
@@ -42,6 +42,8 @@ export class Room {
     this.createdAt = Date.now();
     this.startTimer = null;
     this.lastThemeKey = null;
+    this.danger = 0;
+    this.openedChests = 0;
   }
 
   addPlayer(ws, name, charKey) {
@@ -93,6 +95,7 @@ export class Room {
   start() {
     if (this.state !== 'lobby') return;
     this.state = 'playing';
+    this.danger = 0; this.openedChests = 0;
     this.map = generateMap(this.lastThemeKey);
     this.lastThemeKey = this.map.theme.key;
     this.phase = 'loadout';
@@ -320,7 +323,7 @@ export class Room {
   }
 
   killZombie(z, from) {
-    z.hp = 0; z.deadUntil = Date.now() + ZOMBIE.respawn;
+    z.hp = 0; z.deadUntil = Date.now() + Math.round(ZOMBIE.respawn * Math.max(.625, 1 - this.danger * .075));
     const v = ZOMBIE_VARIANTS[z.variant] || ZOMBIE_VARIANTS.normal;
     if (v.explode > 0) {
       for (const p of this.players.values()) {
@@ -469,6 +472,7 @@ export class Room {
   }
 
   openChest(p, chest) {
+    const firstOpen = !chest.open;
     chest.open = true;
     const taken = [], remain = [];
     let w = this.bagWeight(p);
@@ -484,7 +488,15 @@ export class Room {
       p.coins += gain;
       this.events.push({ k: 'coins', id: p.id, coins: p.coins, gain, reason: '开棺' });
     }
-    this.events.push({ k: 'chest', id: chest.id, by: p.id, byName: p.name, got: taken, big: chest.big });
+    let dangerGain = 0;
+    if (firstOpen && taken.length) {
+      const routeMul = chest.route === 'danger' ? 1.3 : chest.route === 'mechanism' ? 1.05 : .8;
+      dangerGain = (DANGER_BY_TIER[chest.tier] || .35) * routeMul;
+      this.danger = Math.min(DANGER_MAX, this.danger + dangerGain);
+      this.openedChests++;
+    }
+    this.events.push({ k: 'chest', id: chest.id, by: p.id, byName: p.name, got: taken, big: chest.big, dangerGain:+dangerGain.toFixed(2), danger:+this.danger.toFixed(2), route:chest.route });
+    if (!taken.length && remain.length) this.sendTo(p, { t:'bagFull', w, limit });
     this.sendTo(p, { t: 'bag', bag: p.bag, w, limit });
   }
 
@@ -507,6 +519,7 @@ export class Room {
       p.bag.push(...got);
       if (!bag.loot.length) this.dropBags = this.dropBags.filter(b => b.id !== bagId);
       this.events.push({ k: 'grabbed', id: bagId, by: p.id, byName: p.name, got });
+      if (!got.length && bag.loot.length) this.sendTo(p, { t:'bagFull', w, limit });
       this.sendTo(p, { t: 'bag', bag: p.bag, w, limit });
     }
   }
@@ -587,7 +600,8 @@ export class Room {
   tickZombies(now, frenzy) {
     for (const z of this.zombies) {
       const v = ZOMBIE_VARIANTS[z.variant] || ZOMBIE_VARIANTS.normal;
-      const speed = ZOMBIE.speed * v.speed * (frenzy ? 1.25 : 1) * TICK_MS / 1000;
+      const dangerMul = 1 + this.danger * .06;
+      const speed = ZOMBIE.speed * v.speed * dangerMul * (frenzy ? 1.25 : 1) * TICK_MS / 1000;
       if (this.phase === 'outside' && !z.outside) continue;
       if (this.phase === 'tomb' && z.outside) continue;
       if (z.hp <= 0) {
@@ -598,7 +612,7 @@ export class Room {
         }
         continue;
       }
-      let best = null, bd = ZOMBIE.aggro;
+      let best = null, bd = ZOMBIE.aggro * (1 + this.danger * .08);
       for (const p of this.players.values()) {
         if (p.st !== 'alive') continue;
         const d = Math.hypot(p.x - z.x, p.z - z.z);
@@ -946,16 +960,17 @@ export class Room {
       remain: Math.max(0, this.endAt - now),
       doorOpen: this.doorOpen,
       exitsOpen: this.exitsOpen,
+      danger: +this.danger.toFixed(2), openedChests: this.openedChests,
       players: [...this.players.values()].map(p => ({
         id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2), ry: +p.ry.toFixed(2),
         hp: p.hp, st: p.st, anim: p.anim || '',
-        bv: this.bagValue(p), bw: this.bagWeight(p),
+        bv: this.bagValue(p), bw: this.bagWeight(p), bl: BAG_LIMIT + (CHARS[p.char].bagBonus || 0),
         spd: p.buffs.speed > now, arm: p.buffs.armor > now, slow: p.buffs.slow > now,
         weapon: p.weapon, ammo: p.ammo, coins: p.coins, bot:p.bot,
         owned: p.boughtWeapons || [], relations:p.relations || {}, handWith:p.handWith || null,
       })),
       zombies: this.zombies.map(z => ({ id: z.id, x: +z.x.toFixed(2), z: +z.z.toFixed(2), hp: z.hp, maxHp: z.maxHp, st: z.st, ry: +(z.ry || 0).toFixed(2), variant: z.variant, name: z.name })),
-      chests: this.chests.map(c => ({ id: c.id, open: c.open, empty: c.open && !c.loot.length, tier: c.tier, big: c.big })),
+      chests: this.chests.map(c => ({ id: c.id, open: c.open, empty: c.open && !c.loot.length, tier: c.tier, big: c.big, route:c.route })),
       items: this.items.filter(i => !i.taken).map(i => i.id),
       weapons: this.weaponSpawns.filter(w => !w.taken).map(w => w.id),
       projectiles: this.projectiles.map(k => ({ id: k.id, x: +k.x.toFixed(2), z: +k.z.toFixed(2) })),

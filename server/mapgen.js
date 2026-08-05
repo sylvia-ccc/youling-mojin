@@ -129,6 +129,23 @@ function buildMapData(o) {
   set(door.i, door.j, 1);
   corridor(door.i, door.j, mainRoom.cx, mainRoom.cy);
 
+  // ---- 三路线语义：按墓室距墓门的深入程度划分安全/机关/凶险 ----
+  const routeDefs = {
+    safe: { key:'safe', name:'安途', desc:'尸煞较少，适合稳妥搜寻', color:0x4f9d72 },
+    mechanism: { key:'mechanism', name:'机巧道', desc:'机关密集，明器收益更高', color:0xc39a45 },
+    danger: { key:'danger', name:'凶煞径', desc:'强敌盘踞，高品棺椁更多', color:0xb44335 },
+  };
+  const routeRooms = [...rooms].filter(r => !r.main).sort((a, b) =>
+    (Math.abs(a.cx - door.i) + Math.abs(a.cy - door.j)) - (Math.abs(b.cx - door.i) + Math.abs(b.cy - door.j)));
+  const nRooms = Math.max(1, routeRooms.length);
+  routeRooms.forEach((r, idx) => { const q = idx / nRooms; r.route = q < .34 ? 'safe' : q < .68 ? 'mechanism' : 'danger'; });
+  mainRoom.route = 'danger';
+  function routeAt(i, j) {
+    let best = mainRoom, bd = Infinity;
+    for (const r of rooms) { const d = Math.abs(i - r.cx) + Math.abs(j - r.cy); if (d < bd) { bd = d; best = r; } }
+    return best.route || 'safe';
+  }
+
   // ---- 3. 连通性校验（洪水填充，不连通处补洞）----
   const seen = new Uint8Array(W * H);
   const q = [[mainRoom.cx, mainRoom.cy]];
@@ -177,7 +194,13 @@ function buildMapData(o) {
     const n = rnd(1, 2);
     for (let k = 0; k < n; k++) {
       const i = rnd(r.x, r.x + r.w - 1), j = rnd(r.y, r.y + r.h - 1);
-      if (!occupied.has(key(i, j))) { chests.push({ id: cid++, i, j, big: false, tier: rollChestTier(false) }); occupied.add(key(i, j)); }
+      if (!occupied.has(key(i, j))) {
+        const route = r.route || 'safe';
+        let tier = rollChestTier(false);
+        if ((route === 'mechanism' || route === 'danger') && tier === 'common' && Math.random() < .55) tier = 'fine';
+        chests.push({ id: cid++, i, j, big: false, tier, route });
+        occupied.add(key(i, j));
+      }
     }
   }
 
@@ -227,7 +250,14 @@ function buildMapData(o) {
     const f = randomFloor((i, j) =>
       j > door.j + 3 && !occupied.has(key(i, j)) &&
       Math.abs(i - mainRoom.cx) + Math.abs(j - mainRoom.cy) < 30);
-    if (f) { zombieSpawns.push({ p: f, variant: rollZombieVariant(false, o.variantW) }); occupied.add(key(f[0], f[1])); }
+    if (f) {
+      const route = routeAt(f[0], f[1]);
+      let variant = rollZombieVariant(false, o.variantW);
+      if (route === 'safe' && (variant === 'brute' || variant === 'burst')) variant = Math.random() < .6 ? 'normal' : 'swift';
+      if (route === 'danger' && variant === 'normal' && Math.random() < .62) variant = Math.random() < .55 ? 'brute' : 'burst';
+      zombieSpawns.push({ p: f, variant, route });
+      occupied.add(key(f[0], f[1]));
+    }
   }
 
   // ---- 11. 陷阱机关：古墓甬道与墓室地板（压力板）----
@@ -236,8 +266,10 @@ function buildMapData(o) {
   for (let k = 0; k < o.trapCount; k++) {
     const f = randomFloor((i, j) => j > door.j + 4 && !occupied.has(key(i, j)));
     if (!f) continue;
+    const route = routeAt(f[0], f[1]);
+    if (route === 'safe' && Math.random() < .65) continue;
     occupied.add(key(f[0], f[1]));
-    traps.push({ id: tid++, i: f[0], j: f[1], type: pickTrap(o.trapW) });
+    traps.push({ id: tid++, i: f[0], j: f[1], type: pickTrap(o.trapW), route });
   }
 
   // ---- 12. 危害区域：墓道局部坍塌/险地（计时危险区）----
@@ -253,14 +285,14 @@ function buildMapData(o) {
   }
 
   // ---- 10. 输出世界坐标 ----
-  const chestsW = chests.map(c => { const [x, z] = cellToWorld(c.i, c.j, W, H); return { id: c.id, x, z, big: c.big, tier: c.tier }; });
+  const chestsW = chests.map(c => { const [x, z] = cellToWorld(c.i, c.j, W, H); return { id: c.id, x, z, big: c.big, tier: c.tier, route: c.route || routeAt(c.i, c.j) }; });
   const itemsW = items.map(c => { const [x, z] = cellToWorld(c.i, c.j, W, H); return { id: c.id, type: c.type, x, z }; });
   const weaponsW = weapons.map(c => { const [x, z] = cellToWorld(c.i, c.j, W, H); return { id: c.id, type: c.type, x, z }; });
   const exitsW = exits.map(c => { const [x, z] = cellToWorld(c.i, c.j, W, H); return { x, z }; });
   const spawnsW = spawns.map(c => { const [x, z] = cellToWorld(c[0], c[1], W, H); return { x, z }; });
   const torchesW = torches.map(c => { const [x, z] = cellToWorld(c.i, c.j, W, H); return { x, z }; });
-  const zombieSpawnsW = zombieSpawns.map((c, idx) => { const [x, z] = cellToWorld(c.p[0], c.p[1], W, H); return { x, z, variant: c.variant, outside: idx < outsideMonsters.length }; });
-  const trapsW = traps.map(c => { const [x, z] = cellToWorld(c.i, c.j, W, H); return { id: c.id, x, z, type: c.type }; });
+  const zombieSpawnsW = zombieSpawns.map((c, idx) => { const [x, z] = cellToWorld(c.p[0], c.p[1], W, H); return { x, z, variant: c.variant, route: c.route || (idx < outsideMonsters.length ? 'safe' : routeAt(c.p[0], c.p[1])), outside: idx < outsideMonsters.length }; });
+  const trapsW = traps.map(c => { const [x, z] = cellToWorld(c.i, c.j, W, H); return { id: c.id, x, z, type: c.type, route: c.route || routeAt(c.i, c.j) }; });
   const hazardsW = hazards.map(c => { const [x, z] = cellToWorld(c.i, c.j, W, H); return { id: c.id, x, z, r: o.hazardR }; });
   const [doorX, doorZ] = cellToWorld(door.i, door.j, W, H);
   const outsideZone = {
@@ -270,11 +302,19 @@ function buildMapData(o) {
     maxZ: doorZ - 1,
   };
 
+  const regions = rooms.map((r, idx) => {
+    const min = cellToWorld(r.x, r.y, W, H);
+    const max = cellToWorld(r.x + r.w - 1, r.y + r.h - 1, W, H);
+    const def = routeDefs[r.route || 'safe'];
+    return { id:'route' + idx, route:def.key, name:def.name, desc:def.desc, color:def.color,
+      minX:min[0] - 1, maxX:max[0] + 1, minZ:min[1] - 1, maxZ:max[1] + 1, main:!!r.main };
+  });
+
   // cells 转成行字符串（"0"/"1"）
   const rows = [];
   for (let j = 0; j < H; j++) { let s = ''; for (let i = 0; i < W; i++) s += at(i, j); rows.push(s); }
 
-  return { w: W, h: H, cell: 2, rows, chests: chestsW, items: itemsW, weapons: weaponsW, exits: exitsW, spawns: spawnsW, torches: torchesW, zombieSpawns: zombieSpawnsW, traps: trapsW, hazards: hazardsW, door: { x: doorX, z: doorZ }, outside: outsideZone };
+  return { w: W, h: H, cell: 2, rows, regions, chests: chestsW, items: itemsW, weapons: weaponsW, exits: exitsW, spawns: spawnsW, torches: torchesW, zombieSpawns: zombieSpawnsW, traps: trapsW, hazards: hazardsW, door: { x: doorX, z: doorZ }, outside: outsideZone };
 }
 
 // 随机选一张主题地图；prevKey 非空时避免与上一张重复（实现“不停轮换”）

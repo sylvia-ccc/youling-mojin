@@ -46,7 +46,21 @@ export class HUD {
     $('bagValue').textContent = '💰 ' + value;
     const el = $('bagWeight');
     el.textContent = `${w}/${limit}斤`;
+    el.classList.toggle('heavy', w >= limit * .8 && w < limit);
     el.classList.toggle('full', w >= limit);
+  }
+
+  danger(value, opened = 0) {
+    const v = Math.max(0, Math.min(5, Number(value) || 0));
+    const level = Math.min(5, Math.ceil(v));
+    const key = `${v.toFixed(2)}:${opened}`;
+    if (this.last.danger === key) return;
+    this.last.danger = key;
+    const el = $('dangerState');
+    el.className = v >= 3.5 ? 'high' : v >= 1.5 ? 'watch' : 'calm';
+    el.querySelector('span').textContent = `阴气 ${level}/5 · 已开${opened}棺`;
+    $('dangerFill').style.width = (v / 5 * 100) + '%';
+    $('dangerTip').textContent = v >= 4.5 ? '尸潮将至 · 建议立即撤离' : v >= 3 ? '凶险加剧 · 继续摸金或撤离' : v >= 1.5 ? '尸煞警觉正在提高' : '墓穴尚算平静';
   }
 
   hotbar(hotbar) {
@@ -142,6 +156,13 @@ export class HUD {
       cv.width = cv.height = S;
       const c = cv.getContext('2d');
       c.fillStyle = '#0a0906'; c.fillRect(0, 0, S, S);
+      const routeColor = { safe:'rgba(79,157,114,.28)', mechanism:'rgba(195,154,69,.28)', danger:'rgba(180,67,53,.3)' };
+      for (const r of this.map.regions || []) {
+        const x = (r.minX / this.map.cell + this.map.w / 2) * this.map.cell * scale;
+        const y = (r.minZ / this.map.cell + this.map.h / 2) * this.map.cell * scale;
+        c.fillStyle = routeColor[r.route] || 'rgba(255,255,255,.1)';
+        c.fillRect(x, y, (r.maxX - r.minX) * scale, (r.maxZ - r.minZ) * scale);
+      }
       c.fillStyle = '#4a4238';
       for (let j = 0; j < this.map.h; j++) for (let i = 0; i < this.map.w; i++) {
         if (this.map.rows[j][i] === '0') c.fillRect(i * this.map.cell * scale, j * this.map.cell * scale, this.map.cell * scale + .5, this.map.cell * scale + .5);

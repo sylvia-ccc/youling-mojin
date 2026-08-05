@@ -57,6 +57,7 @@ const G = {
   playing: false,
   yaw: 0, pitch: 0, viewMode: 0,
   camDist: 4.3, camX: 0, camZ: 0, camY: 2.5,
+  camShoulder: 1, camShoulderX: 0.68, charFade: 1, charFadeMaterials: [],
   px: 0, pz: 0, keys: {}, running: false,
   remotes: new Map(),
   zombies: new Map(),
@@ -86,9 +87,11 @@ const G = {
   renderScale: 1, fpsFrames: 0, fpsAt: performance.now(),
   lastTorchSelect: 0, selectedTorchPts: [], lastInteractScan: 0, lastItemAnim: 0,
   lastMiniMap: 0, lastHudSecond: -1, lastSentPos: { x: 0, z: 0, ry: 0, at: 0 },
+  currentRoute: null,
   spectateId: null, returningToMenu: false,
 };
 const CAMERA_DIR = new THREE.Vector3();
+const CHAR_SCREEN_POS = new THREE.Vector3();
 
 // 客户端陷阱显示名（与服务端 TRAPS 同步）
 const TRAP_NAMES = { dart: '飞镖机关', rock: '落石机关', gas: '毒气机关' };
@@ -194,6 +197,7 @@ function wireNet() {
     else leaveMatchToMenu('小队已全军覆没');
   });
   n.on('openProg', m => { if (G.interact) G.hud.prog(m.prog, G.interact.big ? '正在开启主墓宝棺' : '正在开棺摸金'); });
+  n.on('bagFull', m => { const el=$('bagWeight'); el.textContent=`${m.w}/${m.limit}斤`; el.classList.add('full'); G.hud.announce('背包已满 · 前往撤离或放弃重物', 2200); navigator.vibrate?.([30, 35, 30]); });
   n.on('extractProg', m => { G.hud.prog(m.prog > 0 ? m.prog : null, '正在撤离'); });
   n.on('end', m => onEnd(m));
   n.on('close', () => { if (G.playing) { alert('与服务器断开连接'); location.reload(); } });
@@ -210,12 +214,15 @@ function onGameStart(m) {
   buildWorld(m);
   G.playing = true;
   G.camX = G.px; G.camZ = G.pz; G.camY = 2.5; G.camDist = 4.3;
+  G.camShoulder = 1; G.camShoulderX = 0.68; G.charFade = 1; G.charFadeMaterials = [];
+  G.currentRoute = null;
   G.myState = 'alive';
   show('hud');
   G.hotbar = [];
   G.myWeapon = 'fist'; G.myAmmo = 0;
   G.hud.hotbar(G.hotbar);
   updateWeaponHUD();
+  updateViewLabel();
   const mapName = (m.map.theme && m.map.theme.name) || '幽陵秘墓';
   G.hud.announce('进入「' + mapName + '」· 整备玄兵 20秒后出发', 2600);
   const mnEl = document.getElementById('mapName'); if (mnEl) { mnEl.textContent = mapName; mnEl.style.display = ''; }
@@ -333,7 +340,7 @@ function onSnap(m) {
     if (ps.id === G.myId) {
       G.hud.hp(ps.hp, G.chars?.[G.myChar]?.hp || 100);
       G.hud.buffs(ps);
-      G.hud.bag(ps.bv, ps.bw, 20);
+      G.hud.bag(ps.bv, ps.bw, ps.bl || 20);
       G.buffSlow = ps.slow;
       G.coins = ps.coins ?? G.coins;
       G.ownedWeapons = ps.owned || G.ownedWeapons;
@@ -417,6 +424,7 @@ function onSnap(m) {
   for (const ev of m.ev) onEvent(ev);
 
   // HUD
+  G.hud.danger(m.danger || 0, m.openedChests || 0);
   const remainSecond = Math.ceil(m.remain / 1000);
   if (remainSecond !== G.lastHudSecond) { G.lastHudSecond = remainSecond; G.hud.timer(m.remain, m.exitsOpen); }
   if (m.exitsOpen && !G.exitsOpen) G.exitsOpen = true;
@@ -510,6 +518,7 @@ function onEvent(ev) {
         SFX.ding();
       }
       if (ev.got?.some(t => t.name === '传国玉玺')) G.hud.announce('⚱ 传国玉玺出世 ⚱', 3200);
+      if (ev.dangerGain > 0 && ev.by === G.myId && !ev.got?.some(t => t.name === '传国玉玺')) setTimeout(() => G.hud.announce(`阴气 +${ev.dangerGain.toFixed(1)} · 继续摸金或撤离`, 1700), 650);
       break;
     }
     case 'grabbed':
@@ -781,11 +790,26 @@ function useItem(slot) {
   navigator.vibrate?.(12);
 }
 
+function updateViewLabel() {
+  const names = ['第一人称', '第三人称（背面）', '第三人称（正面）'];
+  const shoulder = G.camShoulder > 0 ? '右肩' : '左肩';
+  $('viewMode').textContent = (G.touchCapable ? '' : 'V · ') + names[G.viewMode] + (G.viewMode ? ` · ${shoulder}` : '');
+  const btn = $('touchShoulder');
+  if (btn) { btn.querySelector('span').textContent = G.camShoulder > 0 ? '右' : '左'; btn.querySelector('small').textContent = '切肩'; }
+}
+
 function cycleView() {
   if (!canAct()) return;
   G.viewMode = (G.viewMode + 1) % 3;
-  const names = ['第一人称', '第三人称（背面）', '第三人称（正面）'];
-  $('viewMode').textContent = (G.touchCapable ? '' : 'V · ') + names[G.viewMode];
+  updateViewLabel();
+  navigator.vibrate?.(8);
+}
+
+function toggleShoulder() {
+  if (!canAct() || G.viewMode === 0) return;
+  G.camShoulder *= -1;
+  updateViewLabel();
+  G.hud.announce(G.camShoulder > 0 ? '镜头切至右肩' : '镜头切至左肩', 900);
   navigator.vibrate?.(8);
 }
 
@@ -851,6 +875,7 @@ function initTouchInput() {
   $('touchRun').addEventListener('pointerdown', e => { e.preventDefault(); if (canAct()) { G.keys.ShiftLeft = true; $('touchRun').classList.add('active'); } });
   ['pointerup','pointercancel','pointerleave'].forEach(type => $('touchRun').addEventListener(type, () => { G.keys.ShiftLeft = false; $('touchRun').classList.remove('active'); }));
   $('touchView').addEventListener('pointerdown', e => { e.preventDefault(); cycleView(); });
+  $('touchShoulder').addEventListener('pointerdown', e => { e.preventDefault(); toggleShoulder(); });
   $('touchShop').addEventListener('pointerdown', e => { e.preventDefault(); toggleShop(); });
   $('touchRelation').addEventListener('pointerdown', e => { e.preventDefault(); toggleRelationPanel(); });
   $('hotbar').addEventListener('pointerdown', e => { const slot = e.target.closest('.slot[data-slot]'); if (slot) { e.preventDefault(); useItem(+slot.dataset.slot); } });
@@ -869,6 +894,7 @@ function initInput() {
     if (G.shopOpen) { if (e.code === 'Escape') toggleShop(false); return; }
     G.keys[e.code] = true;
     if (e.code === 'KeyV' && !e.repeat) cycleView();
+    if (e.code === 'KeyC' && !e.repeat) toggleShoulder();
     if (e.code === 'KeyE') G.eHeld = true;
     if (/^Digit[1-3]$/.test(e.code)) useItem(+e.code.slice(5) - 1);
   });
@@ -925,6 +951,18 @@ function moveLocal(dt) {
   } else G.moving = false;
 }
 
+function updateRouteState() {
+  const region = (G.map?.regions || []).find(r => G.px >= r.minX && G.px <= r.maxX && G.pz >= r.minZ && G.pz <= r.maxZ);
+  const next = region?.route || null;
+  if (next === G.currentRoute) return;
+  G.currentRoute = next;
+  const el = $('routeState');
+  el.className = next || 'hidden';
+  if (!region) { el.classList.add('hidden'); return; }
+  el.textContent = region.name + (region.main ? ' · 主墓' : '');
+  G.hud.announce(`进入${region.name} · ${region.desc}`, 1800);
+}
+
 // ================= 渲染循环 =================
 let lastFrame = performance.now();
 function loop() {
@@ -940,6 +978,7 @@ function loop() {
     updateInteract(now);
     updateRemotes(now, dt);
     updateZombies(now);
+    updateRouteState();
     updateProjFx(dt);
     updateExplodeFx(dt);
     updateDeathFx(dt);
@@ -1148,6 +1187,35 @@ function raycastMaxDist(tx, tz, dx, dz, maxDist) {
   return last;
 }
 
+function updateCharacterFade(me, viewMode, dt) {
+  if (!me?.parts?.group) return;
+  me.parts.group.traverse(obj => {
+    if (!obj.isMesh || !obj.material) return;
+    if (!obj.userData.localFadeMaterial) {
+      obj.material = Array.isArray(obj.material) ? obj.material.map(mat => mat.clone()) : obj.material.clone();
+      obj.userData.localFadeMaterial = true;
+    }
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const mat of mats) {
+      if (G.charFadeMaterials.some(x => x.mat === mat)) continue;
+      G.charFadeMaterials.push({ mat, transparent: mat.transparent, opacity: mat.opacity, depthWrite: mat.depthWrite });
+    }
+  });
+  let blocked = false;
+  if (viewMode !== 0) {
+    CHAR_SCREEN_POS.set(G.px, 1.18, G.pz).project(G.camera);
+    blocked = Math.abs(CHAR_SCREEN_POS.x) < 0.22 && Math.abs(CHAR_SCREEN_POS.y) < 0.34 && G.camDist < 2.2;
+  }
+  const target = blocked ? 0.26 : 1;
+  G.charFade = damp(G.charFade, target, blocked ? 16 : 9, dt);
+  for (const rec of G.charFadeMaterials) {
+    rec.mat.transparent = rec.transparent || G.charFade < 0.995;
+    rec.mat.opacity = rec.opacity * G.charFade;
+    rec.mat.depthWrite = G.charFade < 0.995 ? false : rec.depthWrite;
+    rec.mat.needsUpdate = true;
+  }
+}
+
 function updateCamera(dt) {
   const me = G.remotes.get(G.myId);
   const spectating = G.myState === 'dead' || G.myState === 'out';
@@ -1178,9 +1246,13 @@ function updateCamera(dt) {
     if (safeDist < G.camDist) G.camDist = safeDist;       // 贴墙立即收回，杜绝穿墙
     else G.camDist = damp(G.camDist, safeDist, 6, dt);    // 离开墙体时平滑拉远
 
-    // 目标水平位置
-    const wx = tx + dx * G.camDist, wz = tz + dz * G.camDist;
-    // 水平平滑（转角惯性）
+    // 目标水平位置：后/前方向之外加入左右肩偏移
+    const sideX = Math.cos(ry) * G.camShoulder;
+    const sideZ = -Math.sin(ry) * G.camShoulder;
+    const shoulderWant = safeDist < 1.25 ? G.camShoulderX * 0.35 : G.camShoulderX;
+    const wx = tx + dx * G.camDist + sideX * shoulderWant;
+    const wz = tz + dz * G.camDist + sideZ * shoulderWant;
+    // 水平平滑（转角惯性 + 肩位切换平滑）
     G.camX = damp(G.camX, wx, 12, dt);
     G.camZ = damp(G.camZ, wz, 12, dt);
     // 安全网：平滑过程中若仍穿入墙体，硬性拉回到墙前（允许拉到很近以杜绝穿墙）
@@ -1194,6 +1266,8 @@ function updateCamera(dt) {
     G.camera.position.set(G.camX, G.camY, G.camZ);
     G.camera.lookAt(tx, 1.35 + G.pitch * -1.2, tz);
   }
+
+  updateCharacterFade(me, viewMode, dt);
 
   G.camera.getWorldDirection(CAMERA_DIR);
   G.flashlight.position.copy(G.camera.position);

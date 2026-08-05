@@ -96,6 +96,8 @@ export const HAZARD = { dmg:9, tick:1000, r:3.0 };
 
 // ========== 游戏常量 ==========
 export const BAG_LIMIT = 20;
+export const DANGER_BY_TIER = { common:0.35, fine:0.65, epic:1.0, legendary:1.5 };
+export const DANGER_MAX = 5;
 export const MELEE_ARC = Math.PI * 0.45;
 export const OPEN_TIME = 3000;
 export const GRAB_TIME = 1200;

@@ -53,6 +53,8 @@
   <div id="topbar">
     <div id="timer">6:00</div>
     <div id="mapName" style="display:none"></div>
+    <div id="routeState" class="hidden">安途</div>
+    <div id="dangerState" class="calm"><span>阴气 0</span><div><i id="dangerFill"></i></div><small id="dangerTip">墓穴尚算平静</small></div>
     <div id="exitState">撤离点未开启</div>
     <div id="objective">目标：杀出荒院，寻找墓门</div>
   </div>
@@ -115,6 +117,7 @@
     <div class="touch-top-actions">
       <button id="touchShop" class="touch-mini hidden"><span>库</span><small>武器</small></button>
       <button id="touchRelation" class="touch-mini"><span>缘</span><small>关系</small></button>
+      <button id="touchShoulder" class="touch-mini"><span>右</span><small>切肩</small></button>
       <button id="touchView" class="touch-mini"><span>视</span><small>视角</small></button>
     </div>
     <div class="touch-actions">
@@ -131,7 +134,8 @@
         <div class="guide-row"><b>左摇杆</b><span>拖动移动；摇得越远，走得越快</span></div>
         <div class="guide-row"><b>右侧空白区</b><span>滑动转向和抬头低头</span></div>
         <div class="guide-row"><b>攻 / 交 / 疾</b><span>攻击；靠近目标后长按交互；按住疾跑</span></div>
-        <div class="guide-row"><b>视 / 缘 / 库</b><span>切换镜头；真人关系；整备阶段武器库</span></div>
+        <div class="guide-row"><b>视 / 左右肩</b><span>切换镜头；第三人称切换左肩或右肩视角</span></div>
+        <div class="guide-row"><b>缘 / 库</b><span>真人关系；整备阶段武器库</span></div>
         <div class="guide-row"><b>底部道具</b><span>直接点按回阳丹、神行符、护身符</span></div>
         <button id="mobileGuideOk" class="shop-close-btn">明白了 · 开始摸金</button>
       </div>
